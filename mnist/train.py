@@ -25,7 +25,7 @@ class MNISTDataModule(L.LightningDataModule):
         self.batch_size = batch_size  # important for batch size finder
         self._MNIST_STATS = (0.1307,), (0.3081,)
         self._img_size = (224, 224)
-        # self.prepare_data_per_node = True
+        self.prepare_data_per_node = True
         self.train_transforms = transforms.Compose(
             [
                 transforms.Resize(self._img_size),
@@ -187,6 +187,8 @@ if __name__ == "__main__":
     training_config = {
         "accelerator": "gpu",
         "devices": 1,
+        "num_nodes": 2,
+        "strategy": "ddp",
         "precision": "16-mixed",
         "max_epochs": 5,
         "accumulate_grad_batches": 2,
