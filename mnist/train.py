@@ -187,13 +187,14 @@ if __name__ == "__main__":
     training_config = {
         "accelerator": "gpu",
         "devices": 1,
-        "num_nodes": 2,
-        "strategy": "ddp",
+        # "num_nodes": 2,
+        # "strategy": "ddp",
         "precision": "16-mixed",
         "max_epochs": 5,
         "accumulate_grad_batches": 2,
         "gradient_clip_val": 0.1,
         "default_root_dir": LOG_DIR,
+        # "num_sanity_val_steps": 0,
         "callbacks": [
             checkpointing,
             # pl.callbacks.LearningRateFinder(),
