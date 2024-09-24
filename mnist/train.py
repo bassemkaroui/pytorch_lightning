@@ -178,6 +178,11 @@ if __name__ == "__main__":
         monitor="val_loss", patience=5, verbose=True
     )
     lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval="step")
+    checkpointing = pl.callbacks.ModelCheckpoint(
+        monitor="val_loss",
+        filename="{epoch:02d}-{step}-{val_loss:.3f}",
+        mode="min",
+    )
 
     training_config = {
         "accelerator": "gpu",
@@ -188,6 +193,7 @@ if __name__ == "__main__":
         "gradient_clip_val": 0.1,
         "default_root_dir": LOG_DIR,
         "callbacks": [
+            checkpointing,
             # pl.callbacks.LearningRateFinder(),
             # pl.callbacks.BatchSizeFinder(mode="binsearch", init_val=8),
         ],
@@ -203,7 +209,7 @@ if __name__ == "__main__":
 
     trainer.fit(model, datamodule=mnist_dm)
 
-    ## Fine tuning
+    # Fine tuning
     model.fine_tuning = True
 
     training_config["max_epochs"] = 30
