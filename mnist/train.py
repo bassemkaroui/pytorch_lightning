@@ -1,5 +1,10 @@
+# PYTHON_ARGCOMPLETE_OK
+
+import argparse
+import re
 from pathlib import Path
 
+import argcomplete
 import lightning as L
 import lightning.pytorch as pl
 import torch
@@ -15,6 +20,7 @@ from torchvision import datasets, models, transforms
 ROOT_DIR = Path.home() / "mnist"  # Path.cwd()
 DATA_DIR = ROOT_DIR / "data"
 LOG_DIR = ROOT_DIR / "logs"
+BATCH_SIZE = 256  # 464
 
 
 class MNISTDataModule(L.LightningDataModule):
@@ -169,59 +175,151 @@ class MNISTModel(pl.LightningModule):
         }
 
 
-if __name__ == "__main__":
-    BATCH_SIZE = 464
-    mnist_dm = MNISTDataModule(DATA_DIR, batch_size=BATCH_SIZE)
+def pos_int(value: str):
+    int_value = int(value)
+    if int_value <= 0:
+        raise argparse.ArgumentTypeError(
+            f"Invalid value {value}: must be a positive number"
+        )
+    return int_value
+
+
+def device_type(value: str):
+    if re.match(r"-?\d+", value):
+        int_value = int(value)
+        if int_value == 0 or int_value < -1:
+            raise argparse.ArgumentTypeError(
+                "Must be an integer greater than 0 or equal to -1"
+            )
+        return int_value
+    elif value == "auto":
+        return value
+    elif re.match(r"\[(\d+,\s)*\d\]", value):
+        return eval(value)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Pytorch Lightning Trainer for MNIST dataset",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+
+    parser.add_argument("--batch-size", type=pos_int, default=BATCH_SIZE, help="-")
+    parser.add_argument("--data-dir", default=DATA_DIR, help="-")
+    parser.add_argument("--fine-tuning", action="store_true", help="-")
+    parser.add_argument("--early-stopping", action="store_true", help="-")
+    parser.add_argument("--lr-monitoring", action="store_true", help="-")
+    parser.add_argument("--checkpointing", action="store_true", help="-")
+    parser.add_argument("--lr-finder", action="store_true", help="-")
+    parser.add_argument("--batch-size-finder", action="store_true", help="-")
+
+    parser.add_argument("--num-sanity-val-steps", type=int, default=2, help="-")
+    parser.add_argument("--default-root-dir", default=LOG_DIR, help="-")
+    parser.add_argument("--gradient-clip-val", type=float, default=0.5, help="-")
+    parser.add_argument("--accumulate-grad-batches", type=pos_int, default=2, help="-")
+    parser.add_argument("--max-epochs", type=pos_int, default=5, help="-")
+    parser.add_argument(
+        "--precision", choices=["16-mixed", "32-true"], default="16-mixed", help="-"
+    )
+    parser.add_argument(
+        "--strategy", choices=("ddp", "dp", "auto"), default="auto", help="-"
+    )
+    parser.add_argument("--num-nodes", type=pos_int, default=1, help="-")
+    parser.add_argument("--devices", type=device_type, default="auto", help="-")
+    parser.add_argument(
+        "--accelerator", choices=("gpu", "cpu", "auto"), default="cpu", help="-"
+    )
+
+    argcomplete.autocomplete(parser)
+    args, _ = parser.parse_known_args()
+
+    mnist_dm = MNISTDataModule(data_dir=args.data_dir, batch_size=args.batch_size)
     model = MNISTModel()
 
-    early_stopping = pl.callbacks.EarlyStopping(
-        monitor="val_loss", patience=5, verbose=True
-    )
-    lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval="step")
-    checkpointing = pl.callbacks.ModelCheckpoint(
-        monitor="val_loss",
-        filename="{epoch:02d}-{step}-{val_loss:.3f}",
-        mode="min",
-    )
+    callbacks = []
+    if args.early_stopping:
+        early_stopping = pl.callbacks.EarlyStopping(
+            monitor="val_loss", patience=5, verbose=True
+        )
+        callbacks.append(early_stopping)
+
+    if args.lr_monitoring:
+        lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval="step")
+        callbacks.append(lr_monitor)
+
+    trainer_args = [
+        "accelerator",
+        "devices",
+        "num_nodes",
+        "strategy",
+        "precision",
+        "max_epochs",
+        "accumulate_grad_batches",
+        "gradient_clip_val",
+        "default_root_dir",
+        "num_sanity_val_steps",
+    ]
 
     training_config = {
-        "accelerator": "gpu",
-        "devices": 1,
-        # "num_nodes": 2,
-        # "strategy": "ddp",
-        "precision": "16-mixed",
-        "max_epochs": 5,
-        "accumulate_grad_batches": 2,
-        "gradient_clip_val": 0.1,
-        "default_root_dir": LOG_DIR,
-        # "num_sanity_val_steps": 0,
-        "callbacks": [
-            checkpointing,
-            # pl.callbacks.LearningRateFinder(),
-            # pl.callbacks.BatchSizeFinder(mode="binsearch", init_val=8),
-        ],
+        attr_name: getattr(args, attr_name) for attr_name in trainer_args
     }
+    training_config["callbacks"] = []
+    if args.checkpointing:
+        checkpointing = pl.callbacks.ModelCheckpoint(
+            monitor="val_loss",
+            filename="{epoch:02d}-{step}-{val_loss:.3f}",
+            mode="min",
+        )
+        training_config["callbacks"].append(checkpointing)
+
+    # training_config = {
+    #     "accelerator": "gpu",
+    #     "devices": 1,
+    #     # "num_nodes": 2,
+    #     # "strategy": "ddp",
+    #     "precision": "16-mixed",
+    #     "max_epochs": 5,
+    #     "accumulate_grad_batches": 2,
+    #     "gradient_clip_val": 0.1,
+    #     "default_root_dir": LOG_DIR,
+    #     # "num_sanity_val_steps": 0,
+    #     "callbacks": [
+    #         checkpointing,
+    #         # pl.callbacks.LearningRateFinder(),
+    #         # pl.callbacks.BatchSizeFinder(mode="binsearch", init_val=8),
+    #     ],
+    # }
 
     trainer = pl.Trainer(**training_config)
-    tuner = Tuner(trainer)
-    # tuner.scale_batch_size(model, datamodule=mnist_dm, mode="binsearch", init_val=8)
-    tuner.lr_find(model, datamodule=mnist_dm)
 
-    trainer.callbacks.append(early_stopping)
-    trainer.callbacks.append(lr_monitor)
+    tuner = Tuner(trainer)
+    if args.batch_size_finder:
+        tuner.scale_batch_size(model, datamodule=mnist_dm, mode="binsearch", init_val=8)
+    if args.lr_finder:
+        tuner.lr_find(model, datamodule=mnist_dm)
+
+    trainer.callbacks.extend(callbacks)
 
     trainer.fit(model, datamodule=mnist_dm)
 
     # Fine tuning
-    model.fine_tuning = True
+    if args.fine_tuning:
+        model.fine_tuning = args.fine_tuning
 
-    training_config["max_epochs"] = 30
-    trainer = pl.Trainer(**training_config)
-    tuner = Tuner(trainer)
-    # tuner.scale_batch_size(model, datamodule=mnist_dm, mode="binsearch", init_val=8)
-    tuner.lr_find(model, datamodule=mnist_dm)
+        training_config["max_epochs"] = 30
+        trainer = pl.Trainer(**training_config)
+        tuner = Tuner(trainer)
+        if args.batch_size_finder:
+            tuner.scale_batch_size(
+                model, datamodule=mnist_dm, mode="binsearch", init_val=8
+            )
+        if args.lr_finder:
+            tuner.lr_find(model, datamodule=mnist_dm)
 
-    trainer.callbacks.append(early_stopping)
-    trainer.callbacks.append(lr_monitor)
+        trainer.callbacks.extend(callbacks)
 
-    trainer.fit(model, datamodule=mnist_dm)
+        trainer.fit(model, datamodule=mnist_dm)
+
+
+if __name__ == "__main__":
+    main()
