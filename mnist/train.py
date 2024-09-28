@@ -198,7 +198,7 @@ def device_type(value: str):
         return eval(value)
 
 
-def main():
+def main(args=None):
     parser = argparse.ArgumentParser(
         description="Pytorch Lightning Trainer for MNIST dataset",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -231,7 +231,7 @@ def main():
     )
 
     argcomplete.autocomplete(parser)
-    args, _ = parser.parse_known_args()
+    args, _ = parser.parse_known_args(args)
 
     mnist_dm = MNISTDataModule(data_dir=args.data_dir, batch_size=args.batch_size)
     model = MNISTModel()
