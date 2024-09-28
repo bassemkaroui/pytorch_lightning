@@ -196,6 +196,8 @@ def device_type(value: str):
         return value
     elif re.match(r"\[(\d+,\s)*\d\]", value):
         return eval(value)
+    else:
+        raise argparse.ArgumentTypeError("Invalid argument")
 
 
 def main(args=None):
